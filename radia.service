@@ -1,0 +1,14 @@
+[Unit]
+Description=radia
+After=local-fs.target sysinit.target rc-local.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/radia
+ExecStart=/home/pi/radia/radia.py
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,1 @@
+wget https://moj-dennik.eu/api/getCZ -O /home/pi/radia/CZ.json
