@@ -338,7 +338,7 @@ class Main:
                 try:
                     f = self._BUTTON_FUNC[button]
                 except KeyError:
-                    pass
+                    continue
                 LOGGER.debug("Pressed %s", button)
                 f()
                 self._display.refresh(self._state)
