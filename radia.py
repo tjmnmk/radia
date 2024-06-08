@@ -133,6 +133,7 @@ class State:
         self._player = None
         self._vlc_instance = None
         self._vlc_media = None
+        self._vlc_crashed = False
 
         try:
             self._load_stations(STATIONS_LIST)
@@ -141,6 +142,19 @@ class State:
         else:
             if len(self._stations) == 0:
                 self._load_stations(STATIONS_LIST_BACKUP)
+
+    def crashed():
+        return self._vlc_crashed
+
+    def uncrash(self):
+        if not self._vlc_crashed:
+            return
+
+        station_name = self.station_playing_name()
+        self.play_stop()
+        if station_name != None:
+            self.play_station_by_name(station_name)
+        self._vlc_crashed = False
 
     def _load_stations(self, station_file):
         self._stations = {}
@@ -193,6 +207,10 @@ class State:
         self._vlc_media = None
         self._station_playing = None
 
+    def _callback_from_player(self, event: vlc.Event, *args):
+        LOGGER.debug('vlc crashed, callback called')
+        self._vlc_crashed = True
+
     def play_station_by_name(self, name):
         station = None
         for id, stationc in self._stations.items():
@@ -203,9 +221,16 @@ class State:
             raise NoStation
         LOGGER.debug("Playing: %s", station.stream)
         vlc_instance = vlc.Instance()
-        vlc_media = vlc_instance.media_new(station.stream, "network-caching=7000")
+        vlc_media = vlc_instance.media_new(station.stream, "network-caching=7000", "ipv4-timeout=15000", "http-reconnect")
         player = vlc_instance.media_player_new()
+        player.event_manager().event_attach(
+            vlc.EventType.MediaPlayerEncounteredError,
+            self._callback_from_player)
+        player.event_manager().event_attach(
+            vlc.EventType.MediaPlayerEndReached,
+            self._callback_from_player)
         player.set_media(vlc_media)
+        # player = vlc.MediaPlayer(station.stream, "http-caching=2000") # not working, only first parameter is used in vlc.py
         player.play()
         self._player = player
         self._vlc_instance = vlc_instance
@@ -272,9 +297,11 @@ class WVSButtons:
         for pin in self.PINS:
             GPIO.setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 
-    def wait_on_button(self):
+    def wait_on_button(self, timeout):
+        timeout = float(timeout)
         while True:
             time.sleep(0.01)
+            timeout = timeout - 0.01
             for pin in self.PINS:
                 if not GPIO.input(pin):
                     button_time_d = time.time() - self._button_last_time
@@ -286,6 +313,8 @@ class WVSButtons:
                         return self.BUTTON_NAMES[pin]
                     except KeyError:
                         pass
+            if timeout < 0:
+                return None
 
     KEY1 = 21
     KEY2 = 20
@@ -330,18 +359,23 @@ class Main:
         }
 
     def main(self):
-        self._state.play_station_by_name("Rádio Beat")
+        self._state.play_station_by_name("Rock Rádio")
         self._display.refresh(self._state)
         try:
             while True:
-                button = self._buttons.wait_on_button()
+                button = self._buttons.wait_on_button(1)
+                if button == None:
+                    self._state.uncrash()
+                    continue
                 try:
                     f = self._BUTTON_FUNC[button]
                 except KeyError:
-                    continue
+                    pass
                 LOGGER.debug("Pressed %s", button)
                 f()
                 self._display.refresh(self._state)
+                #assert(not self._state.crashed())
+                #self._state.uncrash()
         finally:
             self._display.clear()
 
